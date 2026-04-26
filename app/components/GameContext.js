@@ -14,9 +14,23 @@ const initialProfile = {
 
 export function GameProvider({ children }) {
   const [profile, setProfile] = useState(initialProfile);
+  const [playerId, setPlayerId] = useState(null);
+  const [answers, setAnswers] = useState([]);
+  const [endingResult, setEndingResult] = useState(null);
 
   return (
-    <GameContext.Provider value={{ profile, setProfile }}>
+    <GameContext.Provider
+      value={{
+        profile,
+        setProfile,
+        playerId,
+        setPlayerId,
+        answers,
+        setAnswers,
+        endingResult,
+        setEndingResult,
+      }}
+    >
       {children}
     </GameContext.Provider>
   );

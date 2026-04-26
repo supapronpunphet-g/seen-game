@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useGame } from "../components/GameContext";
+import { supabase } from "../../lib/supabase";
 
 const QUESTIONS = [
   {
@@ -352,13 +354,118 @@ const TYPING_LINES = [
   "เห็นใช่ไหม",
 ];
 
+const SCORE_MAP = {
+  6: {
+    "ใส่หูฟัง": { morality: 0, fear: 0 },
+    "มองรอบ ๆ": { morality: 1, fear: 1 },
+    "เล่นมือถือ": { morality: -1, fear: 0 },
+  },
+  7: {
+    "มองต่อ": { morality: 1, fear: 1 },
+    "เดินผ่าน": { morality: -1, fear: 0 },
+    "แอบฟัง": { morality: 1, fear: 2 },
+  },
+  8: {
+    "หยิบมือถือ": { morality: 1, fear: 1 },
+    "หันหลังกลับ": { morality: -1, fear: 1 },
+    "ยืนดู": { morality: 0, fear: 2 },
+  },
+  9: {
+    "ถ่ายคลิป": { morality: 1, fear: 1 },
+    "โทรขอความช่วยเหลือ": { morality: 2, fear: 1 },
+    "ไม่ทำอะไร": { morality: -2, fear: 1 },
+  },
+  10: {
+    "ปิดเครื่อง": { morality: -1, fear: 2 },
+    "รับสาย": { morality: 1, fear: 2 },
+    "วางสาย": { morality: 0, fear: 2 },
+  },
+  11: {
+    "สบตา": { morality: 1, fear: 3 },
+    "หลบตา": { morality: -1, fear: 3 },
+    "แกล้งทำเป็นไม่เห็น": { morality: -2, fear: 3 },
+  },
+  12: {
+    "โทรแจ้งตำรวจ": { morality: 2, fear: 1 },
+    "กลับบ้าน": { morality: 0, fear: 2 },
+    "ลบทุกอย่าง": { morality: -2, fear: 2 },
+  },
+  13: {
+    "แจ้งข้อมูล": { morality: 2, fear: 1 },
+    "เงียบรอดูสถานการณ์": { morality: -1, fear: 1 },
+    "กลัว ไม่ทำอะไร": { morality: -2, fear: 2 },
+  },
+  14: {
+    "รับ": { morality: 1, fear: 3 },
+    "ไม่รับ": { morality: 0, fear: 2 },
+    "บล็อก": { morality: 0, fear: 2 },
+  },
+  15: {
+    "ไม่": { morality: -1, fear: 2 },
+    "ใช่": { morality: 1, fear: 2 },
+  },
+  16: {
+    "ออกจากบ้านหาที่หลบซ่อน": { morality: 0, fear: 2 },
+    "ขังตัวเองอยู่ในบ้าน": { morality: 0, fear: 2 },
+    "ขอความช่วยเหลือ": { morality: 1, fear: 1 },
+  },
+  17: {
+    "ทำตามที่เขาบอก": { morality: -2, fear: 2 },
+    "ปฏิเสธ": { morality: 2, fear: 2 },
+    "เงียบประเมิน": { morality: 0, fear: 2 },
+  },
+  18: {
+    "ไป": { morality: 2, fear: 1 },
+    "ไม่ไป": { morality: -1, fear: 2 },
+    "หลบไป": { morality: -2, fear: 2 },
+  },
+  19: {
+    "พูดความจริงทั้งหมด": { morality: 3, fear: 1 },
+    "ช่วยฆาตกรปิดบัง": { morality: -3, fear: 1 },
+    "ปิดเรื่องเงียบ ไม่บอกใคร": { morality: -2, fear: 1 },
+  },
+};
+
+const scoreFor = (questionNumber, answerText) =>
+  SCORE_MAP[questionNumber]?.[answerText] ?? { morality: 0, fear: 0 };
+
+const decideEnding = (totalMorality) => {
+  if (totalMorality >= 8) {
+    return {
+      ending_type: "The Witness",
+      final_message:
+        "คุณเลือกพูดความจริง แม้ความกลัวจะเดินตามหลังทุกก้าว ความเงียบอาจทำให้คุณรอด แต่คุณเลือกให้ใครบางคนได้รับความยุติธรรม",
+    };
+  }
+  if (totalMorality >= 1) {
+    return {
+      ending_type: "The Survivor",
+      final_message:
+        "คุณรอดออกมาได้ แต่บางคำตอบยังติดอยู่ในใจ คุณไม่ได้เป็นคนผิดทั้งหมด แต่คุณก็รู้ดีว่าความเงียบของคุณมีน้ำหนัก",
+    };
+  }
+  return {
+    ending_type: "One of Him",
+    final_message:
+      "คุณไม่ได้ลงมือ แต่คุณเลือกปิดตา เลือกเงียบ และปล่อยให้ความจริงหายไป คืนนั้นคุณอาจรอดออกมาได้ แต่บางส่วนของคุณได้ยืนอยู่ข้างเดียวกับฆาตกรแล้ว",
+  };
+};
+
 export default function QuestionPage() {
-  const { profile } = useGame();
+  const router = useRouter();
+  const {
+    profile,
+    playerId,
+    answers,
+    setAnswers,
+    setEndingResult,
+  } = useGame();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selected, setSelected] = useState(null);
-  const [answers, setAnswers] = useState([]);
   const [message, setMessage] = useState("");
+  const [finalizing, setFinalizing] = useState(false);
+  const answersRef = useRef(answers);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
   const [hasAskedCamera, setHasAskedCamera] = useState(false);
 
@@ -548,6 +655,73 @@ export default function QuestionPage() {
     }
   };
 
+  const finalizeGame = async () => {
+    if (finalizing) return;
+    setFinalizing(true);
+    stopAllSounds();
+
+    const allAnswers = answersRef.current;
+    let totalMorality = 0;
+    let totalFear = 0;
+
+    const enriched = allAnswers.map((a) => {
+      const score = scoreFor(a.questionId, a.answer);
+      totalMorality += score.morality;
+      totalFear += score.fear;
+      return {
+        question_number: a.questionId,
+        answer: a.answer,
+        morality_score: score.morality,
+        fear_score: score.fear,
+      };
+    });
+
+    const ending = decideEnding(totalMorality);
+    const endingForUI = {
+      ending_type: ending.ending_type,
+      total_morality: totalMorality,
+      total_fear: totalFear,
+      final_message: ending.final_message,
+    };
+
+    if (playerId) {
+      const { error: aErr } = await supabase.from("answers").insert(
+        enriched.map((row) => ({
+          player_id: playerId,
+          ...row,
+        }))
+      );
+      if (aErr) {
+        console.error("insert answers failed full:", {
+          message: aErr?.message,
+          details: aErr?.details,
+          hint: aErr?.hint,
+          code: aErr?.code,
+        });
+      }
+
+      const { error: eErr } = await supabase.from("ending_results").insert({
+        player_id: playerId,
+        ending_type: ending.ending_type,
+        total_morality: totalMorality,
+        total_fear: totalFear,
+      });
+      if (eErr) {
+        console.error("insert ending failed full:", {
+          message: eErr?.message,
+          details: eErr?.details,
+          hint: eErr?.hint,
+          code: eErr?.code,
+        });
+      }
+    } else {
+      console.warn("no playerId in context — skipping Supabase save");
+    }
+
+    setEndingResult(endingForUI);
+    router.push("/result");
+  };
+
   const goNextQuestion = () => {
     setSelected(null);
     setMessage("");
@@ -562,8 +736,7 @@ export default function QuestionPage() {
     if (currentIndex < QUESTIONS.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     } else {
-      stopAllSounds();
-      alert("จบเกม");
+      finalizeGame();
     }
   };
 
@@ -623,7 +796,7 @@ export default function QuestionPage() {
     if (!selected) return;
 
     const newAnswers = [
-      ...answers,
+      ...answersRef.current,
       {
         questionId: currentQuestion.id,
         question: currentQuestion.question,
@@ -631,6 +804,7 @@ export default function QuestionPage() {
       },
     ];
 
+    answersRef.current = newAnswers;
     setAnswers(newAnswers);
 
     if (currentQuestion.askCamera && !hasAskedCamera) {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGame } from "../components/GameContext";
+import { supabase } from "../../lib/supabase";
 
 const FIELDS = [
   { name: "realName", label: "ชื่อจริง", type: "text", autoComplete: "name" },
@@ -26,15 +27,56 @@ const GENDERS = [
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { profile, setProfile } = useGame();
+  const {
+    profile,
+    setProfile,
+    setPlayerId,
+    setAnswers,
+    setEndingResult,
+  } = useGame();
   const [form, setForm] = useState(profile);
+  const [submitting, setSubmitting] = useState(false);
 
   const update = (key) => (e) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+
+    const { data, error } = await supabase
+      .from("players")
+      .insert({
+        real_name: form.realName,
+        nickname: form.nickname,
+        email: form.email,
+        age: Number(form.age),
+        gender: form.gender,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("insert player failed full:", {
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code,
+      });
+      const friendly =
+        error?.code === "23505"
+          ? "อีเมลนี้ถูกใช้ไปแล้ว ลองอีเมลอื่น"
+          : error?.message || "บันทึกข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง";
+      alert(friendly);
+      setSubmitting(false);
+      return;
+    }
+
     setProfile(form);
+    setPlayerId(data.id);
+    setAnswers([]);
+    setEndingResult(null);
     router.push("/question");
   };
 
@@ -110,10 +152,10 @@ export default function ProfilePage() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={!form.gender}
+          disabled={!form.gender || submitting}
           className="mt-8 w-full rounded-full border-2 border-black bg-black py-3 text-sm font-bold tracking-[0.15em] text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          ถัดไป
+          {submitting ? "กำลังบันทึก..." : "ถัดไป"}
         </button>
       </form>
     </main>
